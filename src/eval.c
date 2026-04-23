@@ -86,7 +86,13 @@ forth_eval(char* input, Database* db, Stack* stack)
 
     if (tok[0] == '@' && tok[1]) {
       Cell* found = db_get_cell(db, tok + 1);
-      push(stack, found ? cell_copy(found) : cell_make_nil());
+      if (found && found->type == VAL_TEXT) {
+        char buf[MAX_KEY];
+        snprintf(buf, MAX_KEY, "%s", found->value);
+        forth_eval(buf, db, stack);
+      } else {
+        push(stack, found ? cell_copy(found) : cell_make_nil());
+      }
       continue;
     }
 
@@ -125,15 +131,17 @@ forth_eval(char* input, Database* db, Stack* stack)
       push(stack, img ? img : cell_make_nil());
 
     } else if (strcasecmp(tok, "SCREENSHOT") == 0) {
+      char fname[128];
+      snprintf(fname, sizeof(fname),
+               "scrot_%ld.png", (long)time(NULL));
       char path[256];
-      snprintf(path, sizeof(path),
-               "images/scrot_%ld.png", (long)time(NULL));
+      snprintf(path, sizeof(path), "images/%s", fname);
       char cmd[512];
       snprintf(cmd, sizeof(cmd), "scrot -s %s", path);
       if (system(cmd) != 0) {
         fprintf(stderr, "scrot failed\n");
       }
-      Cell* img = cell_read_image(path);
+      Cell* img = cell_read_image(fname);
       push(stack, img ? img : cell_make_nil());
 
     } else if (strcasecmp(tok, "RESIZE") == 0) {
@@ -141,14 +149,25 @@ forth_eval(char* input, Database* db, Stack* stack)
       Cell* img = pop(stack);
       int sz = cell_to_num(size);
       if (img->type == VAL_IMAGE && img->value[0] && sz > 0) {
-        char cmd[512];
+        char out[256];
+        char* dot = strrchr(img->value, '.');
+        if (dot) {
+          int base = dot - img->value;
+          snprintf(out, sizeof(out), "%.*s_%d%s", base, img->value, sz, dot);
+        } else {
+          snprintf(out, sizeof(out), "%s_%d", img->value, sz);
+        }
+        char src_path[256], out_path[256];
+        snprintf(src_path, sizeof(src_path), "images/%s", img->value);
+        snprintf(out_path, sizeof(out_path), "images/%s", out);
+        char cmd[1024];
         snprintf(cmd, sizeof(cmd),
                  "convert %s -resize %dx%d %s",
-                 img->value, sz, sz, img->value);
+                 src_path, sz, sz, out_path);
         if (system(cmd) != 0) {
           fprintf(stderr, "convert failed\n");
         }
-        Cell* reloaded = cell_read_image(img->value);
+        Cell* reloaded = cell_read_image(out);
         cell_free_temp(img);
         push(stack, reloaded ? reloaded : cell_make_nil());
       } else {

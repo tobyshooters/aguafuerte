@@ -127,78 +127,80 @@ text_width(char* text)
 static int
 ns_label_width(Row* row)
 {
-  return text_width(row->ns) + CELL_GAP + CELL_PAD;
+  return text_width(row->ns) + CELL_PAD;
 }
 
 static int
-cell_val_height(Cell* cell)
+img_scaled(int dim, float scale)
 {
+  int s = (int)(dim * scale);
+  return s > 0 ? s : 1;
+}
+
+#define PATH_HEIGHT (FONT_HEIGHT + 2)
+
+static int
+grid_align(int v, int grid)
+{
+  return ((v + grid - 1) / grid) * grid;
+}
+
+static int
+cell_val_height(Cell* cell, float scale)
+{
+  int gy = FONT_HEIGHT + 2;
   if (cell->type == VAL_IMAGE) {
-    return cell->img_height + CELL_PAD;
+    return PATH_HEIGHT + grid_align(img_scaled(cell->img_height, scale), gy);
   }
-  return FONT_HEIGHT + CELL_PAD;
+  return gy;
 }
 
 static int
-cell_height(Cell* cell)
+cell_height(Cell* cell, float scale)
 {
-  return KEY_HEIGHT + cell_val_height(cell);
+  return KEY_HEIGHT + cell_val_height(cell, scale);
 }
 
 static int
-line_height(Row* row, int line)
+row_height(Row* row, float scale)
 {
-  int h = KEY_HEIGHT + FONT_HEIGHT + CELL_PAD;
+  int h = KEY_HEIGHT + FONT_HEIGHT + 2;
   for (int i = 0; i < row->cell_count; i++) {
-    if (!row->cells[i].tombstone && row->cells[i].line == line) {
-      int ch = cell_height(&row->cells[i]);
-      if (ch > h) {
+    if (!row->cells[i].tombstone) {
+      int ch = cell_height(&row->cells[i], scale);
+      if (ch > h)
         h = ch;
-      }
     }
   }
   return h;
 }
 
 static int
-row_lines(Row* row)
+cell_display_width(Cell* cell, float scale)
 {
-  int max_line = 0;
-  for (int i = 0; i < row->cell_count; i++) {
-    if (!row->cells[i].tombstone && row->cells[i].line > max_line) {
-      max_line = row->cells[i].line;
-    }
+  int vw;
+  if (cell->type == VAL_IMAGE) {
+    int pw = text_width(cell->value);
+    int iw = img_scaled(cell->img_width, scale);
+    vw = MAX(pw, iw);
+  } else {
+    vw = text_width(cell->value);
   }
-  return max_line + 1;
-}
-
-static int
-row_height(Row* row)
-{
-  int h = 0;
-  for (int l = 0; l < row_lines(row); l++) {
-    h += line_height(row, l);
-  }
-  return h > 0 ? h : KEY_HEIGHT + FONT_HEIGHT + CELL_PAD;
+  return MAX(text_width(cell->key), vw) + CELL_PAD * 2;
 }
 
 static void
-layout_row(Row* row, int max_width)
+layout_row(Row* row, int max_width, int label_w, float scale)
 {
-  int label_w = ns_label_width(row);
+  (void)max_width;
   int col = label_w;
-  int line = 0;
 
   for (int i = 0; i < row->cell_count; i++) {
     if (row->cells[i].tombstone) {
       continue;
     }
-    if (col + CELL_GAP + row->cells[i].width > max_width && col > label_w) {
-      line++;
-      col = label_w;
-    }
-    row->cells[i].col = col + CELL_GAP;
-    row->cells[i].line = line;
+    row->cells[i].width = cell_display_width(&row->cells[i], scale);
+    row->cells[i].col = col;
     col = row->cells[i].col + row->cells[i].width;
   }
 }
@@ -293,6 +295,7 @@ db_init(Database* db)
 {
   memset(db, 0, sizeof(Database));
   db->max_width = ROW_DEFAULT_WIDTH;
+  db->img_scale = 1.0f;
   image_alloc(&db->img, db->max_width, 64);
   strcpy(db->filename, "db.png");
 }
@@ -339,11 +342,20 @@ parse_key(char* key, char* ns, char* local)
 static void
 recompute_row_offsets(Database* db)
 {
+  int max_lw = 0;
+  for (int i = 0; i < db->row_count; i++) {
+    int lw = ns_label_width(&db->rows[i]);
+    if (lw > max_lw) {
+      max_lw = lw;
+    }
+  }
+  db->label_width = max_lw;
+
   int y = 0;
   for (int i = 0; i < db->row_count; i++) {
-    layout_row(&db->rows[i], db->max_width);
+    layout_row(&db->rows[i], db->max_width, db->label_width, db->img_scale);
     db->rows[i].y_offset = y;
-    db->rows[i].height = row_height(&db->rows[i]);
+    db->rows[i].height = row_height(&db->rows[i], db->img_scale);
     y += db->rows[i].height + ROW_GAP;
   }
   if (y > db->img.height) {
@@ -363,7 +375,7 @@ find_or_create_row(Database* db, char* ns)
   Row* row = &db->rows[db->row_count];
   memset(row, 0, sizeof(Row));
   strcpy(row->ns, ns);
-  row->height = KEY_HEIGHT + FONT_HEIGHT + CELL_PAD;
+  row->height = KEY_HEIGHT + FONT_HEIGHT + 2;
   db->row_count++;
 
   recompute_row_offsets(db);
@@ -397,23 +409,31 @@ row_end(Row* row)
 }
 
 static void
-render_cell(Image* img, Cell* cell, int y_offset)
+render_cell(Image* img, Cell* cell, int y_offset, float scale)
 {
   int key_y = y_offset + 1;
-  int val_y = y_offset + KEY_HEIGHT;
+  int val_y = y_offset + KEY_HEIGHT + 1;
   write_text(img->data, img->alloc_width, cell->key, cell->col + 1, key_y,
              0, 0, 0);
 
   if (cell->type == VAL_IMAGE && cell->img_data) {
+    write_text(img->data, img->alloc_width, cell->value, cell->col + 1, val_y,
+               60, 60, 60);
+    int dw = img_scaled(cell->img_width, scale);
+    int dh = img_scaled(cell->img_height, scale);
     int ox = cell->col + 1;
-    int oy = val_y;
-    for (int sy = 0; sy < cell->img_height; sy++) {
-      for (int sx = 0; sx < cell->img_width; sx++) {
+    int oy = val_y + PATH_HEIGHT;
+    for (int dy = 0; dy < dh; dy++) {
+      for (int dx = 0; dx < dw; dx++) {
+        int sx = (int)(dx / scale);
+        int sy = (int)(dy / scale);
+        if (sx >= cell->img_width) { sx = cell->img_width - 1; }
+        if (sy >= cell->img_height) { sy = cell->img_height - 1; }
         int src = (sy * cell->img_width + sx) * 3;
-        int dx = ox + sx;
-        int dy = oy + sy;
-        if (dx < img->alloc_width && dy < img->alloc_height) {
-          int dst = (dy * img->alloc_width + dx) * 3;
+        int px = ox + dx;
+        int py = oy + dy;
+        if (px < img->alloc_width && py < img->alloc_height) {
+          int dst = (py * img->alloc_width + px) * 3;
           img->data[dst] = cell->img_data[src];
           img->data[dst + 1] = cell->img_data[src + 1];
           img->data[dst + 2] = cell->img_data[src + 2];
@@ -429,10 +449,14 @@ render_cell(Image* img, Cell* cell, int y_offset)
 static void
 render_row(Database* db, Row* row)
 {
-  layout_row(row, db->max_width);
+  float scale = db->img_scale;
+  layout_row(row, db->max_width, db->label_width, scale);
 
-  int rh = row_height(row);
-  int needed_w = db->max_width;
+  int rh = row_height(row, scale);
+  int needed_w = row_end(row) + CELL_PAD;
+  if (needed_w < db->max_width) {
+    needed_w = db->max_width;
+  }
   if (needed_w > db->img.width) {
     image_realloc(&db->img, needed_w, db->img.height);
   }
@@ -442,7 +466,6 @@ render_row(Database* db, Row* row)
     image_realloc(&db->img, db->img.width, needed_h);
   }
 
-  // Clear entire row region
   for (int y = row->y_offset; y < row->y_offset + rh && y < db->img.alloc_height; y++) {
     for (int x = 0; x < db->img.alloc_width; x++) {
       int idx = (y * db->img.alloc_width + x) * 3;
@@ -450,26 +473,15 @@ render_row(Database* db, Row* row)
     }
   }
 
-  // Render namespace label
   int label_y = row->y_offset + 1;
   write_text(db->img.data, db->img.alloc_width, row->ns, 1, label_y,
              120, 120, 120);
 
-  // Render cells at their line offsets
-  int lines = row_lines(row);
-  int* line_y = calloc(lines, sizeof(int));
-  line_y[0] = row->y_offset;
-  for (int l = 1; l < lines; l++) {
-    line_y[l] = line_y[l - 1] + line_height(row, l - 1);
-  }
-
   for (int i = 0; i < row->cell_count; i++) {
     if (!row->cells[i].tombstone) {
-      render_cell(&db->img, &row->cells[i], line_y[row->cells[i].line]);
+      render_cell(&db->img, &row->cells[i], row->y_offset, scale);
     }
   }
-
-  free(line_y);
 }
 
 static void
@@ -479,6 +491,14 @@ render_all(Database* db)
   recompute_row_offsets(db);
   for (int i = 0; i < db->row_count; i++) {
     render_row(db, &db->rows[i]);
+  }
+}
+
+void
+db_render(Database* db)
+{
+  if (db->row_count > 0) {
+    render_all(db);
   }
 }
 
@@ -558,7 +578,7 @@ cell_read_text_file(char* path)
     return NULL;
   }
 
-  int line_h = FONT_HEIGHT + 1;
+  int line_h = FONT_HEIGHT + 2;
   int w = TEXT_WRAP * (FONT_WIDTH + 1) + 1;
   int h = nlines * line_h + 1;
   uint8_t* pixels = malloc(w * h * 3);
@@ -623,7 +643,7 @@ db_set(Database* db, char* key, char* value)
     cell = &row->cells[row->cell_count++];
     memset(cell, 0, sizeof(Cell));
     strcpy(cell->key, local);
-    cell->col = row_end(row) + CELL_GAP;
+    cell->col = row_end(row);
   }
 
   cell_free_internal(cell);
@@ -656,7 +676,7 @@ db_set_cell(Database* db, char* key, Cell* src)
     cell = &row->cells[row->cell_count++];
     memset(cell, 0, sizeof(Cell));
     strcpy(cell->key, local);
-    cell->col = row_end(row) + CELL_GAP;
+    cell->col = row_end(row);
   }
 
   cell_free_internal(cell);
@@ -774,6 +794,12 @@ db_save(Database* db, char* filename)
     strcpy(db->filename, filename);
   }
 
+  float saved_scale = db->img_scale;
+  if (db->img_scale != 1.0f) {
+    db->img_scale = 1.0f;
+    render_all(db);
+  }
+
   mkdir(IMG_DIR, 0755);
 
   Image* img = &db->img;
@@ -792,8 +818,222 @@ db_save(Database* db, char* filename)
   char path[512];
   snprintf(path, sizeof(path), "%s/%s", IMG_DIR, db->filename);
 
-  return save_png(path, img->data + (y0 * img->alloc_width + x0) * 3,
-                  tw, th, img->alloc_width);
+  int result = save_png(path, img->data + (y0 * img->alloc_width + x0) * 3,
+                        tw, th, img->alloc_width);
+
+  if (saved_scale != 1.0f) {
+    db->img_scale = saved_scale;
+    render_all(db);
+  }
+
+  return result;
+}
+
+static int
+is_dark(uint8_t* data, int alloc_width, int x, int y)
+{
+  int idx = (y * alloc_width + x) * 3;
+  return data[idx] < 200 || data[idx + 1] < 200 || data[idx + 2] < 200;
+}
+
+static int
+col_has_dark(uint8_t* data, int alloc_width, int x, int y, int h)
+{
+  for (int dy = 0; dy < h; dy++) {
+    if (is_dark(data, alloc_width, x, y + dy)) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static int
+is_text_color(uint8_t* data, int alloc_width, int x, int y)
+{
+  int idx = (y * alloc_width + x) * 3;
+  return data[idx] == 60 && data[idx + 1] == 60 && data[idx + 2] == 60;
+}
+
+static void
+db_reconstruct(Database* db)
+{
+  Image* img = &db->img;
+  db->row_count = 0;
+
+  int row_y[MAX_ROWS];
+  char row_ns[MAX_ROWS][MAX_KEY];
+  int nrows = 0;
+
+  for (int y = 0; y + FONT_HEIGHT <= img->height && nrows < MAX_ROWS; y++) {
+    if (!col_has_dark(img->data, img->alloc_width, 1, y, FONT_HEIGHT)) {
+      continue;
+    }
+    char* text = read_text(img->data, img->alloc_width, img->height, 1, y);
+    if (!text) {
+      continue;
+    }
+    row_y[nrows] = y;
+    strncpy(row_ns[nrows], text, MAX_KEY - 1);
+    row_ns[nrows][MAX_KEY - 1] = '\0';
+    nrows++;
+    y += FONT_HEIGHT;
+  }
+
+  if (nrows == 0) {
+    return;
+  }
+
+  int max_lw = 0;
+  for (int i = 0; i < nrows; i++) {
+    int lw = text_width(row_ns[i]) + CELL_PAD;
+    if (lw > max_lw) {
+      max_lw = lw;
+    }
+  }
+  db->label_width = max_lw;
+
+  for (int r = 0; r < nrows; r++) {
+    Row* row = &db->rows[db->row_count++];
+    memset(row, 0, sizeof(Row));
+    strcpy(row->ns, row_ns[r]);
+    row->y_offset = row_y[r] - 1;
+
+    int row_bottom;
+    if (r + 1 < nrows) {
+      row_bottom = row_y[r + 1] - 1 - ROW_GAP;
+    } else {
+      row_bottom = img->height;
+    }
+    row->height = row_bottom - row->y_offset;
+
+    int key_y = row_y[r];
+    int val_y = row->y_offset + KEY_HEIGHT + 1;
+
+    int key_x[MAX_CELLS];
+    char key_name[MAX_CELLS][MAX_KEY];
+    int nkeys = 0;
+
+    int x = max_lw;
+    while (x + FONT_WIDTH <= img->width && nkeys < MAX_CELLS) {
+      while (x + FONT_WIDTH <= img->width && !col_has_dark(img->data, img->alloc_width, x, key_y, FONT_HEIGHT)) {
+        x++;
+      }
+      if (x + FONT_WIDTH > img->width) {
+        break;
+      }
+      char* key = read_text(img->data, img->alloc_width, img->height, x, key_y);
+      if (!key) {
+        x++;
+        continue;
+      }
+      key_x[nkeys] = x;
+      strncpy(key_name[nkeys], key, MAX_KEY - 1);
+      key_name[nkeys][MAX_KEY - 1] = '\0';
+      nkeys++;
+      x += text_width(key);
+    }
+
+    for (int k = 0; k < nkeys; k++) {
+      Cell* cell = &row->cells[row->cell_count];
+      memset(cell, 0, sizeof(Cell));
+      strcpy(cell->key, key_name[k]);
+      cell->col = key_x[k] - 1;
+
+      int kw = text_width(key_name[k]);
+      int vx = key_x[k];
+      int vy = val_y;
+
+      int cell_px;
+      if (k + 1 < nkeys) {
+        cell_px = key_x[k + 1] - cell->col - CELL_PAD;
+      } else {
+        cell_px = img->width - vx;
+      }
+
+      int has_text = 0;
+      for (int ty = vy; ty < vy + FONT_HEIGHT && !has_text; ty++) {
+        for (int tx = vx; tx < vx + kw && tx < img->width; tx++) {
+          if (is_text_color(img->data, img->alloc_width, tx, ty)) {
+            has_text = 1;
+            break;
+          }
+        }
+      }
+
+      if (has_text) {
+        char* val = read_text_n(img->data, img->alloc_width, img->height,
+                                vx, vy, cell_px);
+        if (val) {
+          strncpy(cell->value, val, MAX_KEY - 1);
+        }
+
+        int img_y = vy + PATH_HEIGHT;
+        int has_pixels = 0;
+        int cell_right;
+        if (k + 1 < nkeys) {
+          cell_right = key_x[k + 1];
+        } else {
+          cell_right = img->width;
+        }
+        for (int sy = img_y; sy < row_bottom && sy < img->height && !has_pixels; sy++) {
+          for (int sx = vx; sx < cell_right && sx < img->width; sx++) {
+            if (is_dark(img->data, img->alloc_width, sx, sy)) {
+              has_pixels = 1;
+              break;
+            }
+          }
+        }
+
+        if (has_pixels) {
+          cell->type = VAL_IMAGE;
+
+          int ix1 = vx, iy1 = img_y;
+          for (int sy = img_y; sy < row_bottom && sy < img->height; sy++) {
+            for (int sx = vx; sx < cell_right && sx < img->width; sx++) {
+              if (is_dark(img->data, img->alloc_width, sx, sy)) {
+                if (sx > ix1) { ix1 = sx; }
+                if (sy > iy1) { iy1 = sy; }
+              }
+            }
+          }
+
+          int iw = ix1 - vx + 1;
+          int ih = iy1 - img_y + 1;
+          if (iw > 0 && ih > 0) {
+            cell->img_width = iw;
+            cell->img_height = ih;
+            cell->img_data = malloc(iw * ih * 3);
+            for (int sy = 0; sy < ih; sy++) {
+              for (int sx = 0; sx < iw; sx++) {
+                int si = ((img_y + sy) * img->alloc_width + vx + sx) * 3;
+                int di = (sy * iw + sx) * 3;
+                cell->img_data[di] = img->data[si];
+                cell->img_data[di + 1] = img->data[si + 1];
+                cell->img_data[di + 2] = img->data[si + 2];
+              }
+            }
+          }
+          int pw = text_width(cell->value);
+          cell->width = MAX(kw, MAX(pw, iw)) + CELL_PAD * 2;
+        } else {
+          char* end;
+          long n = strtol(cell->value, &end, 10);
+          if (*end == '\0' && end != cell->value) {
+            cell->type = VAL_NUM;
+            cell->num = (int)n;
+          } else {
+            cell->type = VAL_TEXT;
+          }
+          cell->width = MAX(kw, text_width(cell->value)) + CELL_PAD * 2;
+        }
+      } else {
+        cell->type = VAL_IMAGE;
+        cell->width = kw + CELL_PAD * 2;
+      }
+
+      row->cell_count++;
+    }
+  }
 }
 
 int
@@ -808,6 +1048,13 @@ db_load(Database* db, char* filename)
   if (!loaded) {
     return -1;
   }
+
+  for (int i = 0; i < db->row_count; i++) {
+    for (int j = 0; j < db->rows[i].cell_count; j++) {
+      cell_free_internal(&db->rows[i].cells[j]);
+    }
+  }
+  db->row_count = 0;
 
   if (db->img.data) {
     image_free(&db->img);
@@ -826,6 +1073,26 @@ db_load(Database* db, char* filename)
 
   stbi_image_free(loaded);
   strcpy(db->filename, filename);
+
+  db_reconstruct(db);
+
+  mkdir(IMG_DIR, 0755);
+  for (int i = 0; i < db->row_count; i++) {
+    for (int j = 0; j < db->rows[i].cell_count; j++) {
+      Cell* c = &db->rows[i].cells[j];
+      if (c->type == VAL_IMAGE && c->img_data && c->value[0]) {
+        char resolved_img[512];
+        if (!resolve_path(c->value, resolved_img, sizeof(resolved_img))) {
+          char path[512];
+          snprintf(path, sizeof(path), "%s/%s", IMG_DIR, c->value);
+          stbi_write_png(path, c->img_width, c->img_height, 3,
+                         c->img_data, c->img_width * 3);
+        }
+      }
+    }
+  }
+
+  render_all(db);
   return 0;
 }
 

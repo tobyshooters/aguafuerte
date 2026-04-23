@@ -8,10 +8,9 @@
 #define MAX_ROWS 64
 #define MAX_CELLS 256
 
-#define CELL_PAD 2
-#define CELL_GAP 1
+#define CELL_PAD 4
 #define KEY_HEIGHT 8
-#define ROW_GAP 2
+#define ROW_GAP 8
 #define ROW_DEFAULT_WIDTH 320
 
 typedef struct
@@ -38,7 +37,6 @@ typedef struct
   uint8_t* img_data;
   int img_width, img_height;
   int col;
-  int line;
   int width;
   bool tombstone;
 } Cell;
@@ -58,6 +56,8 @@ typedef struct
   Row rows[MAX_ROWS];
   int row_count;
   int max_width;
+  int label_width;
+  float img_scale;
   char filename[256];
 } Database;
 
@@ -76,6 +76,8 @@ void
 db_init(Database* db);
 void
 db_free(Database* db);
+void
+db_render(Database* db);
 
 int
 db_set(Database* db, char* key, char* value);

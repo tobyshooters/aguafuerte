@@ -186,3 +186,40 @@ read_text(uint8_t* data, int img_width, int img_height, int x, int y)
   buffer[count] = '\0';
   return buffer;
 }
+
+char*
+read_text_n(uint8_t* data, int img_width, int img_height, int x, int y,
+            int max_px)
+{
+  static char buffer[256];
+  int count = 0;
+  int last_non_space = -1;
+
+  int offset = 0;
+  while (offset + FONT_WIDTH <= max_px &&
+         x + offset + FONT_WIDTH <= img_width &&
+         y + FONT_HEIGHT <= img_height &&
+         count < 255) {
+    uint32_t glyph = read_glyph(data, img_width, x + offset, y);
+    char ch = '\0';
+    for (int c = 32; c < 128; c++) {
+      if (font_data[c] == glyph) {
+        ch = c;
+        break;
+      }
+    }
+    if (ch == '\0') {
+      break;
+    }
+    buffer[count++] = ch;
+    if (ch != ' ') {
+      last_non_space = count;
+    }
+    offset += FONT_WIDTH + 1;
+  }
+  if (last_non_space <= 0) {
+    return NULL;
+  }
+  buffer[last_non_space] = '\0';
+  return buffer;
+}

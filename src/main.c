@@ -19,6 +19,7 @@
 static int scroll_y = 0;
 static int view_w = 0;
 static int view_h = 0;
+static bool show_grid = false;
 
 static void
 content_bounds(Database* db, int* w, int* h)
@@ -91,6 +92,24 @@ render(SDL_Renderer* renderer, SDL_Texture* texture, Database* db)
       packed[dst] = img->data[src];
       packed[dst + 1] = img->data[src + 1];
       packed[dst + 2] = img->data[src + 2];
+    }
+  }
+
+  if (show_grid) {
+    int gx = FONT_WIDTH + 1;
+    int gy = FONT_HEIGHT + 2;
+    int max_x = view_w < img->width ? view_w : img->width;
+    int max_y = view_h < img->height - scroll_y ? view_h : img->height - scroll_y;
+    for (int y = 0; y < max_y; y++) {
+      int ay = y + scroll_y;
+      for (int x = 0; x < max_x; x++) {
+        if (x % gx == 0 || ay % gy == 0) {
+          int idx = (y * view_w + x) * 3;
+          packed[idx] = (packed[idx] + 200) / 2;
+          packed[idx + 1] = (packed[idx + 1] + 220) / 2;
+          packed[idx + 2] = (packed[idx + 2] + 255) / 2;
+        }
+      }
     }
   }
 
@@ -172,12 +191,32 @@ main(int argc, char* argv[])
         scroll_y -= event.wheel.y * SCROLL_STEP;
         clamp_scroll(&db);
       } else if (event.type == SDL_KEYDOWN) {
+        SDL_Keymod mod = SDL_GetModState();
         if (event.key.keysym.sym == SDLK_UP) {
           scroll_y -= SCROLL_STEP;
           clamp_scroll(&db);
         } else if (event.key.keysym.sym == SDLK_DOWN) {
           scroll_y += SCROLL_STEP;
           clamp_scroll(&db);
+        } else if ((mod & KMOD_CTRL) && event.key.keysym.sym == SDLK_MINUS) {
+          if (db.img_scale > 0.1f) {
+            db.img_scale *= 0.5f;
+            db_render(&db);
+            texture = remake_texture(renderer, texture, window, &db);
+            clamp_scroll(&db);
+          }
+        } else if ((mod & KMOD_CTRL) &&
+                   (event.key.keysym.sym == SDLK_EQUALS ||
+                    event.key.keysym.sym == SDLK_PLUS)) {
+          db.img_scale *= 2.0f;
+          if (db.img_scale > 4.0f) {
+            db.img_scale = 4.0f;
+          }
+          db_render(&db);
+          texture = remake_texture(renderer, texture, window, &db);
+          clamp_scroll(&db);
+        } else if ((mod & KMOD_CTRL) && event.key.keysym.sym == SDLK_g) {
+          show_grid = !show_grid;
         }
       }
     }

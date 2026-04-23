@@ -18,6 +18,9 @@ write_text(uint8_t* data, int img_width, char* text, int x, int y,
             uint8_t r, uint8_t g, uint8_t b);
 char*
 read_text(uint8_t* data, int img_width, int img_height, int x, int y);
+char*
+read_text_n(uint8_t* data, int img_width, int img_height, int x, int y,
+            int max_px);
 
 extern const uint32_t font_data[128];
 

@@ -11,6 +11,7 @@ accepts commands. The evaluator is a Forth-style stack machine.
 
 ## Build
 
+    ./install.sh    # install dependencies (SDL2, rlwrap, scrot, imagemagick)
     make
     make run        # wraps with rlwrap for history
 
@@ -25,11 +26,29 @@ Keys without a dot go into the `home` namespace.
     30 age SET                -> home.age = 30
     90 metrics.cpu SET        -> metrics.cpu = 90
 
-Each namespace is a visual row in the image. Rows wrap when
-they exceed the window width.
+Each namespace is a visual row in the image. The namespace
+label column has uniform width across all rows.
 
 Deleting a namespace deletes all sub-namespaces too:
 `docs DEL` removes `docs`, `docs.math`, `docs.string`, etc.
+
+## Persistence
+
+Save writes the database image to `images/`. On load, the cell
+structure (rows, keys, values, images) is reconstructed by
+scanning the pixel data:
+
+- Namespace labels are read from the left column
+- Cell keys are decoded from the bitmap font
+- Values are detected as text (gray pixels) or image data
+- Image cells include a file path header above the pixel data
+
+If an image cell's source file is missing from disk, it is
+re-created from the pixels stored in the database image.
+
+    db SAVE                   save to images/db.png
+    mydb SAVE                 save to images/mydb.png
+    db LOAD                   load and reconstruct cells
 
 ## Language
 
@@ -39,25 +58,43 @@ Values are pushed onto a stack; commands pop their arguments.
     42                        push number
     "hello world"             push quoted string
     age                       push literal "age"
+    @age                      fetch and execute stored value
 
 Use `.` to print the top of the stack.
 
+### Shorthand
+
+`@key` fetches a key's value. For text values, it executes the
+text as Forth code (like `GET EXEC`). For other types, it pushes
+the value onto the stack (like `GET`).
+
+    "dup *" sq SET
+    4 @sq .                   -> 16
+    "@sq @sq" quad SET
+    3 @quad .                 -> 81
+
 ### Database
 
-    name SAVE                 save db to images/name (default: db.png)
+    name SAVE                 save db to images/name
     name LOAD                 load db from file
 
 ### Cells
 
     val key SET               set key to value
     key GET                   push value of key
+    @key                      shorthand: fetch and execute
     key DEL                   delete key or namespace
 
 ### Images
 
     path READ                 load image or text file (.md, .txt)
     path READ key SET         store image under key
-    SCREENSHOT key SET        interactive screenshot, store it
+    SCREENSHOT                interactive screenshot (via scrot -s)
+    img size RESIZE           resize image to size x size pixels
+
+Image cells display three rows: key name, file path, and pixel
+data. The file path enables re-linking to the source file for
+operations like RESIZE.
 
 ### Arithmetic
 
@@ -77,10 +114,18 @@ Use `.` to print the top of the stack.
     DROP                      discard top
     SWAP                      swap top two
 
+### Control
+
+    EXEC                      pop text, execute as Forth
+    .                         pop and print top of stack
+
 ### Procedures
 
     "2 *" double SET          store a procedure
     5 double GET EXEC .       -> 10
+    5 @double .               -> 10 (shorthand)
+    "@double @double" quad SET
+    3 @quad .                 -> 81
 
 ### REPL
 
@@ -89,9 +134,16 @@ Use `.` to print the top of the stack.
 The stack persists across lines, so `5` on one line
 then `age SET` on the next works.
 
+## Keyboard shortcuts
+
+    Ctrl +/-                  scale images up/down (text stays fixed)
+    Arrow keys / scroll       scroll the view vertically
+
 ## Files
 
-    src/main.c      REPL + SDL2 window
-    src/db.h/c      Database, cells, rows, PNG I/O
+    src/main.c      REPL + SDL2 window + keyboard input
+    src/db.h/c      Database, cells, rows, PNG I/O, reconstruction
     src/eval.h/c    Forth-style stack evaluator
-    src/glyph.h/c   3x6 bitmap font
+    src/glyph.h/c   3x6 bitmap font (read and write)
+    deps/           stb_image headers
+    install.sh      dependency installer
