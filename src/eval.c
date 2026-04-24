@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include "eval.h"
 
 #include <ctype.h>
@@ -119,6 +120,13 @@ forth_eval(char* input, Database* db, Stack* stack)
       }
       db_del(db, key->value);
       cell_free_temp(key);
+
+    } else if (strcasecmp(tok, "PIN") == 0) {
+      Cell* pos = pop(stack);
+      Cell* ns = pop(stack);
+      db_move_row(db, ns->value, cell_to_num(pos));
+      cell_free_temp(ns);
+      cell_free_temp(pos);
 
     } else if (strcasecmp(tok, "SAVE") == 0) {
       Cell* name = pop(stack);
@@ -259,6 +267,27 @@ forth_eval(char* input, Database* db, Stack* stack)
       snprintf(buf, MAX_KEY, "%s", code->value);
       cell_free_temp(code);
       forth_eval(buf, db, stack);
+
+    } else if (strcasecmp(tok, "LOCATION") == 0) {
+      char buf[128] = { 0 };
+      FILE* fp = popen("curl -s ipinfo.io/city 2>/dev/null", "r");
+      if (fp) {
+        if (fgets(buf, sizeof(buf), fp)) {
+          int len = strlen(buf);
+          if (len > 0 && buf[len - 1] == '\n') {
+            buf[len - 1] = '\0';
+          }
+        }
+        pclose(fp);
+      }
+      push(stack, buf[0] ? cell_make_text(buf) : cell_make_nil());
+
+    } else if (strcasecmp(tok, "TIME") == 0) {
+      time_t now = time(NULL);
+      struct tm* t = localtime(&now);
+      char buf[20];
+      strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", t);
+      push(stack, cell_make_text(buf));
 
     } else if (strcmp(tok, ".") == 0) {
       Cell* a = pop(stack);

@@ -533,7 +533,7 @@ resolve_path(char* path, char* out, int outsize)
   return NULL;
 }
 
-#define TEXT_WRAP 68
+#define TEXT_WRAP 79
 
 static Cell*
 cell_read_text_file(char* path)
@@ -783,6 +783,49 @@ db_del(Database* db, char* key)
     return 0;
   }
   return -1;
+}
+
+int
+db_move_row(Database* db, char* ns, int pos)
+{
+  int src = -1;
+  for (int i = 0; i < db->row_count; i++) {
+    if (strcmp(db->rows[i].ns, ns) == 0) {
+      src = i;
+      break;
+    }
+  }
+  if (src < 0) {
+    return -1;
+  }
+  int offset = 0;
+  if (db->row_count > 0 && strcmp(db->rows[0].ns, "stack") == 0) {
+    offset = 1;
+  }
+  pos += offset;
+  if (pos < offset) {
+    pos = offset;
+  }
+  if (pos >= db->row_count) {
+    pos = db->row_count - 1;
+  }
+  if (src == pos) {
+    return 0;
+  }
+
+  Row tmp = db->rows[src];
+  if (src < pos) {
+    for (int i = src; i < pos; i++) {
+      db->rows[i] = db->rows[i + 1];
+    }
+  } else {
+    for (int i = src; i > pos; i--) {
+      db->rows[i] = db->rows[i - 1];
+    }
+  }
+  db->rows[pos] = tmp;
+  render_all(db);
+  return 0;
 }
 
 static int

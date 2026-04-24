@@ -142,7 +142,7 @@ read_glyph(uint8_t* data, int img_width, int x, int y)
   for (int i = 0; i < FONT_NBITS; i++) {
     int cx = i % FONT_WIDTH;
     int cy = i / FONT_WIDTH;
-    int val = px_get(data, img_width, x + cx, y + cy) < 128 ? 1 : 0;
+    int val = px_get(data, img_width, x + cx, y + cy) < 250 ? 1 : 0;
     glyph |= ((uint32_t)val) << (FONT_NBITS - 1 - i);
   }
   return glyph;

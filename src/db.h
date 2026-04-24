@@ -87,6 +87,8 @@ Cell*
 db_get_cell(Database* db, char* key);
 int
 db_del(Database* db, char* key);
+int
+db_move_row(Database* db, char* ns, int pos);
 
 Cell*
 cell_make_text(char* text);
