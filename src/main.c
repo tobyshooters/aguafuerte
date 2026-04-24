@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 
 #include <SDL2/SDL.h>
 
@@ -163,7 +164,7 @@ render(SDL_Renderer* renderer, SDL_Texture* texture, Database* db, Cli* cli)
 static Stack stack = { 0 };
 
 static void
-handle_submit(char* line, Database* db, bool* running)
+handle_submit(char* line, Database* db, Cli* cli, bool* running)
 {
   while (*line && isspace(*line)) {
     line++;
@@ -177,7 +178,7 @@ handle_submit(char* line, Database* db, bool* running)
     return;
   }
 
-  forth_eval(line, db, &stack);
+  forth_eval(line, db, &stack, cli);
   db_sync_stack(db, stack.items, stack.top);
 }
 
@@ -250,7 +251,7 @@ main(int argc, char* argv[])
 
         if (key == SDLK_RETURN) {
           if (cli_submit(&cli, submitted, sizeof(submitted))) {
-            handle_submit(submitted, &db, &running);
+            handle_submit(submitted, &db, &cli, &running);
             texture = remake_texture(renderer, texture, window, &db);
             clamp_scroll();
           }
@@ -306,6 +307,21 @@ main(int argc, char* argv[])
         } else if ((mod & KMOD_CTRL) && key == SDLK_g) {
           show_grid = !show_grid;
         }
+      }
+    }
+
+    if (stack.edit_pid > 0) {
+      int status;
+      if (waitpid(stack.edit_pid, &status, WNOHANG) > 0) {
+        Cell* img = cell_read_image(stack.edit_path);
+        if (img) {
+          stack.items[stack.top++] = img;
+        }
+        stack.edit_pid = 0;
+        stack.edit_path[0] = '\0';
+        db_sync_stack(&db, stack.items, stack.top);
+        texture = remake_texture(renderer, texture, window, &db);
+        clamp_scroll();
       }
     }
 

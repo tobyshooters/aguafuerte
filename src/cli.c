@@ -129,3 +129,12 @@ cli_submit(Cli* cli, char* out, int outsize)
   cli_clear(cli);
   return true;
 }
+
+void
+cli_set(Cli* cli, char* text)
+{
+  strncpy(cli->buf, text, MAX_INPUT - 1);
+  cli->buf[MAX_INPUT - 1] = '\0';
+  cli->len = strlen(cli->buf);
+  cli->cursor = cli->len;
+}

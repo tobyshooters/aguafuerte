@@ -40,5 +40,7 @@ void
 cli_history_down(Cli* cli);
 bool
 cli_submit(Cli* cli, char* out, int outsize);
+void
+cli_set(Cli* cli, char* text);
 
 #endif

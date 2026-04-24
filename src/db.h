@@ -110,6 +110,10 @@ db_load(Database* db, char* filename);
 
 Cell*
 cell_read_image(char* path);
+Cell*
+cell_read_audio(char* path);
+int
+cell_write_pcm(Cell* cell, char* out_path);
 
 void
 db_sync_stack(Database* db, Cell** items, int count);
