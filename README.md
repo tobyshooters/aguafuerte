@@ -2,6 +2,8 @@
 
 An image-based programming system, with a Forth-like stack REPL.
 
+![](./docs/fliptable.png)
+
 State is stored as a single PNG image, making snapshots first-class.
 Text is rendered with a 3x6 bitmap font directly into RGB pixels.
 This facilitate reconstruction, but should not be considered essential.
