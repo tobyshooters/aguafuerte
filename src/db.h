@@ -111,5 +111,7 @@ cell_read_image(char* path);
 
 void
 db_sync_stack(Database* db, Cell** items, int count);
+int
+db_load_stack(Database* db, Cell** items, int max_items);
 
 #endif

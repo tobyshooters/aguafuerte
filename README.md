@@ -6,14 +6,15 @@ Keys are strings. Values are strings, integers, or images.
 Text is rendered with a 3x6 bitmap font directly into RGB pixels.
 The database file *is* the image; there is no separate format.
 
-An SDL2 window displays the live database while a stdin REPL
-accepts commands. The evaluator is a Forth-style stack machine.
+An SDL2 window displays the live database with a built-in REPL
+rendered in the same bitmap font. The evaluator is a Forth-style
+stack machine.
 
 ## Build
 
-    ./install.sh    # install dependencies (SDL2, rlwrap, scrot, imagemagick)
+    ./install.sh    # install dependencies (SDL2, scrot, imagemagick)
     make
-    make run        # wraps with rlwrap for history
+    make run
 
 Requires SDL2 and a C99 compiler.
 

@@ -111,6 +111,12 @@ forth_eval(char* input, Database* db, Stack* stack)
 
     } else if (strcasecmp(tok, "DEL") == 0) {
       Cell* key = pop(stack);
+      if (strcmp(key->value, "stack") == 0) {
+        for (int si = 0; si < stack->top; si++) {
+          cell_free_temp(stack->items[si]);
+        }
+        stack->top = 0;
+      }
       db_del(db, key->value);
       cell_free_temp(key);
 
@@ -123,6 +129,10 @@ forth_eval(char* input, Database* db, Stack* stack)
       Cell* name = pop(stack);
       db_load(db, name->value);
       cell_free_temp(name);
+      for (int si = 0; si < stack->top; si++) {
+        cell_free_temp(stack->items[si]);
+      }
+      stack->top = db_load_stack(db, stack->items, MAX_STACK);
 
     } else if (strcasecmp(tok, "READ") == 0) {
       Cell* path = pop(stack);
@@ -157,10 +167,10 @@ forth_eval(char* input, Database* db, Stack* stack)
         } else {
           snprintf(out, sizeof(out), "%s_%d", img->value, sz);
         }
-        char src_path[256], out_path[256];
+        char src_path[512], out_path[512];
         snprintf(src_path, sizeof(src_path), "images/%s", img->value);
         snprintf(out_path, sizeof(out_path), "images/%s", out);
-        char cmd[1024];
+        char cmd[2048];
         snprintf(cmd, sizeof(cmd),
                  "convert %s -resize %dx%d %s",
                  src_path, sz, sz, out_path);

@@ -7,7 +7,7 @@ BUILD = build
 
 all: directories $(BUILD)/fliptable
 
-$(BUILD)/fliptable: $(BUILD)/main.o $(BUILD)/db.o $(BUILD)/glyph.o $(BUILD)/eval.o
+$(BUILD)/fliptable: $(BUILD)/main.o $(BUILD)/db.o $(BUILD)/glyph.o $(BUILD)/eval.o $(BUILD)/cli.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/%.o: $(SRC)/%.c
@@ -17,11 +17,15 @@ directories:
 	mkdir -p $(BUILD)
 
 run: $(BUILD)/fliptable
-	rlwrap ./$(BUILD)/fliptable
+	./$(BUILD)/fliptable
 
 test: directories $(BUILD)/db.o $(BUILD)/glyph.o
 	$(CC) $(CFLAGS) -I$(SRC) -o $(BUILD)/test_reconstruct tests/test_reconstruct.c $(BUILD)/db.o $(BUILD)/glyph.o -lm
 	./$(BUILD)/test_reconstruct
+	$(CC) $(CFLAGS) -I$(SRC) -o $(BUILD)/test_img_ns tests/test_img_ns.c $(BUILD)/db.o $(BUILD)/glyph.o -lm
+	./$(BUILD)/test_img_ns
+	$(CC) $(CFLAGS) -I$(SRC) -o $(BUILD)/test_load_db tests/test_load_db.c $(BUILD)/glyph.o -lm
+	./$(BUILD)/test_load_db
 
 debug: CFLAGS += -g -DDEBUG -O0 -ggdb3
 debug: directories $(BUILD)/fliptable

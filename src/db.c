@@ -482,6 +482,22 @@ render_row(Database* db, Row* row)
       render_cell(&db->img, &row->cells[i], row->y_offset, scale);
     }
   }
+
+  if (strcmp(row->ns, "stack") == 0 && row->cell_count > 0) {
+    int val_y = row->y_offset + KEY_HEIGHT + 1;
+    for (int i = 0; i < row->cell_count; i++) {
+      if (row->cells[i].tombstone) {
+        continue;
+      }
+      float t = (float)(row->cell_count - 1 - i) / (float)row->cell_count;
+      uint8_t r = 60 + (uint8_t)(t * (255 - 60));
+      uint8_t g = 60 + (uint8_t)(t * (255 - 60));
+      uint8_t b = 60 + (uint8_t)(t * (255 - 60));
+      write_text(db->img.data, db->img.alloc_width,
+                 row->cells[i].value, row->cells[i].col + 1, val_y,
+                 r, g, b);
+    }
+  }
 }
 
 static void
@@ -836,24 +852,6 @@ is_dark(uint8_t* data, int alloc_width, int x, int y)
   return data[idx] < 200 || data[idx + 1] < 200 || data[idx + 2] < 200;
 }
 
-static int
-col_has_dark(uint8_t* data, int alloc_width, int x, int y, int h)
-{
-  for (int dy = 0; dy < h; dy++) {
-    if (is_dark(data, alloc_width, x, y + dy)) {
-      return 1;
-    }
-  }
-  return 0;
-}
-
-static int
-is_text_color(uint8_t* data, int alloc_width, int x, int y)
-{
-  int idx = (y * alloc_width + x) * 3;
-  return data[idx] == 60 && data[idx + 1] == 60 && data[idx + 2] == 60;
-}
-
 static void
 db_reconstruct(Database* db)
 {
@@ -865,16 +863,6 @@ db_reconstruct(Database* db)
   int nrows = 0;
 
   for (int y = 0; y + FONT_HEIGHT <= img->height && nrows < MAX_ROWS; y++) {
-    int has_start = 0;
-    for (int dx = 0; dx < FONT_WIDTH; dx++) {
-      if (col_has_dark(img->data, img->alloc_width, 1 + dx, y, FONT_HEIGHT)) {
-        has_start = 1;
-        break;
-      }
-    }
-    if (!has_start) {
-      continue;
-    }
     char* text = read_text(img->data, img->alloc_width, img->height, 1, y);
     if (!text) {
       continue;
@@ -883,7 +871,30 @@ db_reconstruct(Database* db)
     strncpy(row_ns[nrows], text, MAX_KEY - 1);
     row_ns[nrows][MAX_KEY - 1] = '\0';
     nrows++;
-    y += FONT_HEIGHT;
+    int sy = y + KEY_HEIGHT + FONT_HEIGHT + 2;
+    int clear_run = 0;
+    int found_gap = 0;
+    for (; sy < img->height; sy++) {
+      int row_clear = 1;
+      for (int sx = 0; sx < img->width; sx++) {
+        if (is_dark(img->data, img->alloc_width, sx, sy)) {
+          row_clear = 0;
+          break;
+        }
+      }
+      if (row_clear) {
+        clear_run++;
+      } else {
+        if (found_gap) {
+          break;
+        }
+        clear_run = 0;
+      }
+      if (clear_run >= ROW_GAP) {
+        found_gap = 1;
+      }
+    }
+    y = sy - 2;
   }
 
   if (nrows == 0) {
@@ -922,22 +933,6 @@ db_reconstruct(Database* db)
 
     int x = max_lw;
     while (x + FONT_WIDTH <= img->width && nkeys < MAX_CELLS) {
-      int found_dark = 0;
-      while (x + FONT_WIDTH <= img->width) {
-        for (int dx = 0; dx < FONT_WIDTH; dx++) {
-          if (col_has_dark(img->data, img->alloc_width, x + dx, key_y, FONT_HEIGHT)) {
-            found_dark = 1;
-            break;
-          }
-        }
-        if (found_dark) {
-          break;
-        }
-        x++;
-      }
-      if (x + FONT_WIDTH > img->width) {
-        break;
-      }
       char* key = read_text(img->data, img->alloc_width, img->height, x, key_y);
       if (!key) {
         x++;
@@ -967,22 +962,10 @@ db_reconstruct(Database* db)
         cell_px = img->width - vx;
       }
 
-      int has_text = 0;
-      for (int ty = vy; ty < vy + FONT_HEIGHT && !has_text; ty++) {
-        for (int tx = vx; tx < vx + kw && tx < img->width; tx++) {
-          if (is_text_color(img->data, img->alloc_width, tx, ty)) {
-            has_text = 1;
-            break;
-          }
-        }
-      }
-
-      if (has_text) {
-        char* val = read_text_n(img->data, img->alloc_width, img->height,
-                                vx, vy, cell_px);
-        if (val) {
-          strncpy(cell->value, val, MAX_KEY - 1);
-        }
+      char* val = read_text_n(img->data, img->alloc_width, img->height,
+                              vx, vy, cell_px);
+      if (val && val[0]) {
+        strncpy(cell->value, val, MAX_KEY - 1);
 
         int img_y = vy + PATH_HEIGHT;
         int has_pixels = 0;
@@ -1129,11 +1112,6 @@ db_sync_stack(Database* db, Cell** items, int count)
     }
   }
 
-  if (count == 0) {
-    render_all(db);
-    return;
-  }
-
   for (int i = db->row_count; i > 0; i--) {
     db->rows[i] = db->rows[i - 1];
   }
@@ -1153,3 +1131,21 @@ db_sync_stack(Database* db, Cell** items, int count)
   render_all(db);
 }
 
+int
+db_load_stack(Database* db, Cell** items, int max_items)
+{
+  for (int i = 0; i < db->row_count; i++) {
+    if (strcmp(db->rows[i].ns, "stack") != 0) {
+      continue;
+    }
+    Row* row = &db->rows[i];
+    int count = 0;
+    for (int j = 0; j < row->cell_count && count < max_items; j++) {
+      if (!row->cells[j].tombstone) {
+        items[count++] = cell_copy(&row->cells[j]);
+      }
+    }
+    return count;
+  }
+  return 0;
+}
