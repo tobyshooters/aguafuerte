@@ -22,30 +22,27 @@ Each namespace is a visual row in the image.
 
 ### Basics
 
-    3 4 + .                   -> 7
+     3 4 + .                  -> 7
     10 3 - .                  -> 7
-    6 7 * .                   -> 42
+     6 7 * .                  -> 42
     10 3 / .                  -> 3
     10 3 % .                  -> 1
     
-    a b CAT                   concatenate two values
-
-    DUP                       duplicate top
-    DROP                      discard top
-    SWAP                      swap top two
-    
-    EXEC                      pop text, execute as Forth
-    .                         pop and print top of stack
-    quit / exit               close the program
-
-
-### Cells
-
     val key SET               set key to value
     key GET                   push value of key
     @key                      shorthand: fetch and execute
     key DEL                   delete key or namespace
     
+    DUP                       duplicate top
+    DROP                      discard top
+    SWAP                      swap top two
+    
+    a b CAT                   concatenate two values
+
+    EXEC                      pop text, execute as Forth
+    .                         pop and print top of stack
+    quit / exit               close the program
+
 ### Procedures
 
     "2 *" double SET          store a procedure
